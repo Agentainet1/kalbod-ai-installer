@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
+# =====================================================================
+# Universal AI Installer & Antigravity Bridge — v2 (audited build)
+# =====================================================================
 set -euo pipefail
 IFS=$'\n\t'
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
-CYAN='\033[0;36m'; MAGENTA='\033[0;35m'; BOLD='\033[1m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'; BOLD='\033[1m'; NC='\033[0m'
 info(){ echo -e "${CYAN}[INFO]${NC} $*"; }
 ok(){ echo -e "${GREEN}[OK]${NC} $*"; }
 warn(){ echo -e "${YELLOW}[WARN]${NC} $*"; }
@@ -12,22 +15,24 @@ step(){ echo -e "\n${BOLD}${MAGENTA}===> $*${NC}"; }
 
 TTY=/dev/tty
 [[ -r "$TTY" ]] || TTY=/dev/stdin
-ask(){ local prompt="$1" var="$2" input=""; printf '%s' "$prompt" > "$TTY"; IFS= read -r input < "$TTY" || true; printf -v "$var" '%s' "$input"; }
+ask(){ printf '%s' "$1" > "$TTY"; IFS= read -r "$2" < "$TTY" || true; }
+confirm(){ local a; ask "$1 [y/N]: " a; [[ "$a" =~ ^[Yy]$ ]]; }
 
 PROXY_PORT=18089
 PROXY_DIR="/opt/kalbod-ai-proxy"
 PROXY_SERVICE="kalbod-ai-proxy.service"
 PROXY_URL="socks5h://127.0.0.1:${PROXY_PORT}"
-WORKING_MODELS_FILE="${PROXY_DIR}/working-models.txt"
+WORKING_MODELS="${PROXY_DIR}/working-models.txt"
 
 MODE_HERMES=0; MODE_CLAUDE=0; MODE_CODEX=0; MODE_ALL=0
 for arg in "$@"; do
   case "$arg" in
     --hermes) MODE_HERMES=1 ;;
     --claude) MODE_CLAUDE=1 ;;
-    --codex)  MODE_CODEX=1 ;;
-    --all)    MODE_ALL=1 ;;
-    -h|--help) cat <<EOF
+    --codex) MODE_CODEX=1 ;;
+    --all) MODE_ALL=1 ;;
+    -h|--help)
+      cat <<EOF
 Usage: $0 [--hermes] [--claude] [--codex] [--all]
 EOF
       exit 0 ;;
@@ -37,7 +42,10 @@ done
 if (( MODE_ALL )); then MODE_HERMES=1; MODE_CLAUDE=1; MODE_CODEX=1; fi
 if (( !MODE_HERMES && !MODE_CLAUDE && !MODE_CODEX )); then
   echo -e "${BOLD}Universal AI Installer & Antigravity Bridge v2${NC}"
-  echo "1) Hermes Agent"; echo "2) Claude Code"; echo "3) OpenAI Codex CLI"; echo "4) All-in-One"
+  echo "1) Hermes Agent"
+  echo "2) Claude Code"
+  echo "3) OpenAI Codex CLI"
+  echo "4) All-in-One"
   ask "Select [1-4]: " choice
   case "${choice:-}" in
     1) MODE_HERMES=1 ;; 2) MODE_CLAUDE=1 ;; 3) MODE_CODEX=1 ;;
@@ -49,7 +57,8 @@ if [[ $EUID -ne 0 ]]; then err "Please run as root (use sudo)."; exit 1; fi
 
 need_cmd(){ command -v "$1" >/dev/null 2>&1; }
 install_pkg(){
-  if need_cmd apt-get; then DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
+  if need_cmd apt-get; then
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y "$@" >/dev/null 2>&1
   elif need_cmd yum; then yum install -y "$@" >/dev/null 2>&1
   elif need_cmd dnf; then dnf install -y "$@" >/dev/null 2>&1
@@ -78,22 +87,19 @@ ensure_node(){
   if need_cmd node; then
     local v; v=$(node -v 2>/dev/null | tr -d 'v' | cut -d. -f1)
     if [[ "$v" =~ ^[0-9]+$ && "$v" -ge 18 ]]; then ok "Node.js $(node -v) present."; return 0; fi
-    warn "Node.js too old ($(node -v)); upgrading."
   fi
   info "Installing Node.js..."
   if need_cmd apt-get; then
-    if curl -fsSL https://deb.nodesource.com/setup_20.x 2>/dev/null | bash - >/tmp/ns.log 2>&1; then
-      DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs >/dev/null 2>&1 || true
-    fi
+    curl -fsSL https://deb.nodesource.com/setup_20.x 2>/dev/null | bash - >/tmp/ns.log 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs >/dev/null 2>&1 || true
   fi
   if ! need_cmd node || [[ "$(node -v 2>/dev/null | tr -d 'v' | cut -d. -f1)" -lt 18 ]]; then
     local arch; arch=$(detect_arch_node)
     [[ -z "$arch" ]] && { err "Unsupported arch for Node: $(uname -m)"; return 1; }
-    local ver; ver=$(curl -fsSL https://nodejs.org/dist/latest/ 2>/dev/null | grep -oE 'node-v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    [[ -z "$ver" ]] && ver="node-v20.11.1"
-    local tar="${ver}-linux-${arch}.tar.xz"
     local tmp; tmp=$(mktemp -d)
-    if curl -fsSL "https://nodejs.org/dist/latest/${tar}" -o "${tmp}/${tar}"; then
+    local ver="node-v20.11.1"
+    local tar="${ver}-linux-${arch}.tar.xz"
+    if curl -fsSL "https://nodejs.org/dist/v20.11.1/${tar}" -o "${tmp}/${tar}"; then
       tar -xf "${tmp}/${tar}" -C /usr/local --strip-components=1
     fi
     rm -rf "$tmp"
@@ -102,12 +108,15 @@ ensure_node(){
   export PATH="/usr/local/bin:$PATH"
 }
 
+# ---------- Phase 1: Proxy ----------
 setup_proxy(){
   step "Setting up isolated local proxy (port ${PROXY_PORT})"
+
   systemctl stop "$PROXY_SERVICE" 2>/dev/null || true
   if need_cmd fuser; then fuser -k "${PROXY_PORT}/tcp" 2>/dev/null || true; fi
   pkill -f "${PROXY_DIR}/xray run" 2>/dev/null || true
   sleep 1
+
   mkdir -p "$PROXY_DIR"
 
   if [[ ! -x "${PROXY_DIR}/xray" ]]; then
@@ -124,8 +133,7 @@ zp=os.path.join(d,'xray.zip')
 with zipfile.ZipFile(zp) as z:
     z.extractall(os.path.join(d,'xraydir'))
 PYEOF
-    if [[ ! -f "${tmp}/xraydir/xray" ]]; then err "Xray binary not found in archive."; exit 1; fi
-    chmod +x "${tmp}/xraydir/xray"
+    if [[ ! -x "${tmp}/xraydir/xray" ]]; then err "Xray binary not found in archive."; exit 1; fi
     install -m 0755 "${tmp}/xraydir/xray" "${PROXY_DIR}/xray"
     rm -rf "$tmp"
     ok "Xray installed."
@@ -254,7 +262,7 @@ EOF
       systemctl restart "$PROXY_SERVICE"
       sleep 2
 
-      okflag=0
+      local okflag=0
       for i in 1 2 3 4 5; do
         if curl -s -o /dev/null --max-time 15 -x "$PROXY_URL" https://accounts.google.com; then
           okflag=1; break
@@ -278,17 +286,16 @@ EOF
   done
 }
 
+# ---------- Phase 2: Antigravity ----------
 setup_antigravity(){
   step "Installing & patching Google Antigravity (agy)"
   if ! need_cmd antigravity-cleaner; then
     info "Installing antigravity-cleaner..."
-    curl -fsSL https://raw.githubusercontent.com/tawroot/antigravity-cleaner/main/install.sh | bash >/tmp/ac.log 2>&1 || warn "antigravity-cleaner install failed (see /tmp/ac.log)"
+    curl -fsSL https://raw.githubusercontent.com/tawroot/antigravity-cleaner/main/install.sh | bash >/tmp/ac.log 2>&1 || warn "install failed (see /tmp/ac.log)"
   fi
   if need_cmd antigravity-cleaner; then
     antigravity-cleaner patch all >/tmp/ac-patch.log 2>&1 || warn "patch failed (see /tmp/ac-patch.log)"
     ok "antigravity-cleaner ready."
-  else
-    warn "antigravity-cleaner not available."
   fi
 
   AGY_BIN=""
@@ -305,11 +312,10 @@ setup_antigravity(){
 
   if ! "$AGY_BIN" models >/dev/null 2>&1; then
     warn "Antigravity not logged in. Launching agy interactively..."
-    info "Complete the Google login in your browser, then return here."
     "$AGY_BIN" </dev/tty >/dev/tty 2>&1 || true
   fi
   if ! "$AGY_BIN" models >/dev/null 2>&1; then
-    err "Antigravity login not verified. Re-run after manual login: $AGY_BIN"
+    err "Antigravity login not verified."
     return 1
   fi
   ok "Antigravity login verified."
@@ -318,31 +324,31 @@ setup_antigravity(){
   info "Available models:"
   cat "${PROXY_DIR}/agy-models.txt" 2>/dev/null || true
 
-  : > "$WORKING_MODELS_FILE"
+  : > "$WORKING_MODELS"
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     local_model=$(echo "$line" | awk '{print $1}')
     [[ -z "$local_model" ]] && continue
     info "Testing model: $local_model ..."
     if timeout 180 "$AGY_BIN" --model "$local_model" -p "Reply with exactly: OK" --print-timeout 90s </dev/null 2>/tmp/agy-test.err | grep -qx "OK"; then
-      echo "$local_model" >> "$WORKING_MODELS_FILE"
+      echo "$local_model" >> "$WORKING_MODELS"
       ok "  WORKS: $local_model"
     else
       warn "  FAILED: $local_model ($(head -c 120 /tmp/agy-test.err 2>/dev/null))"
     fi
   done < "${PROXY_DIR}/agy-models.txt"
 
-  if [[ ! -s "$WORKING_MODELS_FILE" ]]; then
+  if [[ ! -s "$WORKING_MODELS" ]]; then
     warn "No models verified; falling back to agy list."
-    awk '{print $1}' "${PROXY_DIR}/agy-models.txt" > "$WORKING_MODELS_FILE"
+    awk '{print $1}' "${PROXY_DIR}/agy-models.txt" > "$WORKING_MODELS"
   fi
-  ok "Working models saved to ${WORKING_MODELS_FILE}"
+  ok "Working models saved to ${WORKING_MODELS}"
 }
 
 pick_default_model(){
   local models=()
-  if [[ -s "$WORKING_MODELS_FILE" ]]; then
-    while IFS= read -r m; do [[ -n "$m" ]] && models+=("$m"); done < "$WORKING_MODELS_FILE"
+  if [[ -s "$WORKING_MODELS" ]]; then
+    while IFS= read -r m; do [[ -n "$m" ]] && models+=("$m"); done < "$WORKING_MODELS"
   fi
   if [[ ${#models[@]} -eq 0 ]]; then echo "gemini-3.8-flash-high"; return; fi
   if [[ ${#models[@]} -eq 1 ]]; then echo "${models[0]}"; return; fi
@@ -358,6 +364,7 @@ pick_default_model(){
   fi
 }
 
+# ---------- Hermes ----------
 setup_hermes(){
   step "Setting up Hermes Agent"
   if ! need_cmd hermes; then
@@ -372,7 +379,7 @@ setup_hermes(){
 
   if [[ ! -d "$HOME/.hermes/plugins/antigravity-oauth" ]]; then
     info "Installing antigravity-oauth plugin..."
-    hermes plugins install https://github.com/neerazz/hermes-antigravity-oauth --enable --yes-deps >/tmp/hermes-plugin.log 2>&1 || warn "plugin install failed (see /tmp/hermes-plugin.log)"
+    hermes plugins install https://github.com/neerazz/hermes-antigravity-oauth --enable >/tmp/hermes-plugin.log 2>&1 || warn "plugin install failed (see /tmp/hermes-plugin.log)"
   else
     hermes plugins enable antigravity-oauth >/dev/null 2>&1 || true
   fi
@@ -403,6 +410,7 @@ setup_hermes(){
   fi
 }
 
+# ---------- Claude Code ----------
 setup_claude(){
   step "Setting up Claude Code"
   ensure_node
@@ -425,9 +433,10 @@ setup_claude(){
     } >> "$rc"
   done
   ok "Claude Code proxy env configured."
-  warn "NOTE: Claude Code uses Anthropic API. To use Antigravity models, run a local OpenAI/Claude-compatible bridge (e.g. CLIProxyAPI) and set ANTHROPIC_BASE_URL accordingly. This installer sets geo-bypass proxy only."
+  warn "NOTE: Claude Code talks to Anthropic API. To use Antigravity models, run a local OpenAI/Claude-compatible bridge (e.g. CLIProxyAPI) and set ANTHROPIC_BASE_URL. This installer provides geo-bypass proxy only."
 }
 
+# ---------- Codex ----------
 setup_codex(){
   step "Setting up OpenAI Codex CLI"
   ensure_node
@@ -450,9 +459,10 @@ setup_codex(){
     } >> "$rc"
   done
   ok "Codex CLI proxy env configured."
-  warn "NOTE: Codex uses OpenAI API. To use Antigravity models, run a local OpenAI-compatible bridge (e.g. CLIProxyAPI) and set OPENAI_BASE_URL accordingly."
+  warn "NOTE: Codex talks to OpenAI API. To use Antigravity models, run a local OpenAI-compatible bridge (e.g. CLIProxyAPI) and set OPENAI_BASE_URL."
 }
 
+# ---------- Main ----------
 main(){
   setup_proxy
   setup_antigravity || warn "Antigravity setup incomplete."
@@ -463,9 +473,9 @@ main(){
 
   step "All done!"
   echo -e "${GREEN}Proxy:${NC} $PROXY_URL"
-  if [[ -s "$WORKING_MODELS_FILE" ]]; then
+  if [[ -s "$WORKING_MODELS" ]]; then
     echo -e "${GREEN}Working Antigravity models:${NC}"
-    sed 's/^/  - /' "$WORKING_MODELS_FILE"
+    sed 's/^/  - /' "$WORKING_MODELS"
   fi
   echo -e "Use ${BOLD}hermes model${NC} to change default model in Hermes."
 }
