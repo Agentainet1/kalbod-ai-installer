@@ -6,22 +6,22 @@ One-command installer that connects **Hermes Agent**, **Claude Code**, and **Ope
 
 ### 1) Hermes Agent + Antigravity
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --hermes
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --hermes
 ```
 
 ### 2) Claude Code + Antigravity
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --claude
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --claude
 ```
 
 ### 3) OpenAI Codex CLI + Antigravity
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --codex
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --codex
 ```
 
 ### All-in-One
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --all
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --all
 ```
 
 ## فارسی
@@ -32,17 +32,17 @@ curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/mai
 
 1. نصب و اتصال خودکار Hermes:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --hermes
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --hermes
 ```
 
 2. نصب و اتصال خودکار Claude Code:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --claude
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --claude
 ```
 
 3. نصب و اتصال خودکار Codex CLI:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kalbod-team/kalbod-ai-installer/main/install.sh | bash -s -- --codex
+curl -fsSL https://raw.githubusercontent.com/Agentainet1/kalbod-ai-installer/main/install.sh | bash -s -- --codex
 ```
 
 ## Features
